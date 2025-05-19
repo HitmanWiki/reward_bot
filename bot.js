@@ -81,12 +81,27 @@ async function monitorRewardDistributions() {
             console.log(`📊 Found ${events.length} reward events`);
 
             for (const event of events) {
-                const amount = ethers.formatUnits(event.args.value, 6);
-                const displayAmount = parseFloat(amount).toFixed(2);
-                console.log(`🎁 Reward: $${displayAmount} to ${event.args.to.substring(0, 6)}...`);
+                // Debug logging of raw values
+                console.log('Raw event value:', event.args.value.toString());
+
+                // Format the amount correctly with 6 decimal places for USDC
+                const rawAmount = event.args.value;
+                const amountInUnits = ethers.formatUnits(rawAmount, 6);
+                const displayAmount = parseFloat(amountInUnits).toFixed(2);
+
+                // Additional verification
+                console.log(`Raw: ${rawAmount.toString()}, Formatted: ${amountInUnits}, Display: ${displayAmount}`);
+
+                // If still getting huge numbers, try this alternative:
+                const alternativeFormat = (Number(rawAmount) / 1e6).toFixed(2);
+                console.log('Alternative format:', alternativeFormat);
+
+                const finalAmount = displayAmount; // or use alternativeFormat if needed
+
+                console.log(`🎁 Reward: $${finalAmount} to ${event.args.to.substring(0, 6)}...`);
 
                 const message = `🎉 *New Reward Distributed!*\n\n` +
-                    `💰 Amount: $${displayAmount} USDC\n` +
+                    `💰 Amount: $${finalAmount} USDC\n` +
                     `➡️ To: ${event.args.to}\n` +
                     `⏰ Time: ${now.toLocaleString()}\n` +
                     `[🔗 View TX](${config.EXPLORER_URL}${event.transactionHash})`;
@@ -100,7 +115,6 @@ async function monitorRewardDistributions() {
         console.error('⚠️ Reward check failed:', error);
     }
 }
-
 async function sendStatsUpdate() {
     try {
         console.log("\n📈 Preparing stats update...");
@@ -131,7 +145,7 @@ async function startBot() {
         const block = await provider.getBlockNumber();
         console.log(`✅ Blockchain connected (Block ${block})`);
 
-        await bot.telegram.sendMessage(config.CHAT_ID, "🤖 ATM Rewards Bot is now online!");
+        // await bot.telegram.sendMessage(config.CHAT_ID, "🤖 ATM Rewards Bot is now online!");
         console.log("✅ Telegram connection working");
 
         // Initial data load
