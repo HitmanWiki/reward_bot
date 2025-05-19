@@ -81,27 +81,18 @@ async function monitorRewardDistributions() {
             console.log(`📊 Found ${events.length} reward events`);
 
             for (const event of events) {
-                // Debug logging of raw values
-                console.log('Raw event value:', event.args.value.toString());
+                // Get the raw value from the event
+                const rawValue = event.args.value.toString();
+                console.log('Raw value from event:', rawValue);
 
-                // Format the amount correctly with 6 decimal places for USDC
-                const rawAmount = event.args.value;
-                const amountInUnits = ethers.formatUnits(rawAmount, 6);
-                const displayAmount = parseFloat(amountInUnits).toFixed(2);
+                // Convert to proper USDC amount (6 decimals)
+                const usdcAmount = Number(rawValue) / 1000000;
+                const displayAmount = usdcAmount.toFixed(2);
 
-                // Additional verification
-                console.log(`Raw: ${rawAmount.toString()}, Formatted: ${amountInUnits}, Display: ${displayAmount}`);
-
-                // If still getting huge numbers, try this alternative:
-                const alternativeFormat = (Number(rawAmount) / 1e6).toFixed(2);
-                console.log('Alternative format:', alternativeFormat);
-
-                const finalAmount = displayAmount; // or use alternativeFormat if needed
-
-                console.log(`🎁 Reward: $${finalAmount} to ${event.args.to.substring(0, 6)}...`);
+                console.log(`Processed amount: $${displayAmount} USDC`);
 
                 const message = `🎉 *New Reward Distributed!*\n\n` +
-                    `💰 Amount: $${finalAmount} USDC\n` +
+                    `💰 Amount: $${displayAmount} USDC\n` +
                     `➡️ To: ${event.args.to}\n` +
                     `⏰ Time: ${now.toLocaleString()}\n` +
                     `[🔗 View TX](${config.EXPLORER_URL}${event.transactionHash})`;
