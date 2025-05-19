@@ -30,7 +30,7 @@ const server = app.listen(process.env.PORT || 3000, () => {
 });
 
 // Contracts
-const ITM_ABI = [
+const ATM_ABI = [
     "function totalDistributed() view returns (uint256)",
     "event Transfer(address indexed from, address indexed to, uint256 value)"
 ];
@@ -39,7 +39,7 @@ const USDC_ABI = [
     "function balanceOf(address) view returns (uint256)"
 ];
 
-const itm = new ethers.Contract(config.CONTRACT_ADDRESS, ITM_ABI, provider);
+const atm = new ethers.Contract(config.CONTRACT_ADDRESS, ATM_ABI, provider);
 const usdc = new ethers.Contract(config.USDC_ADDRESS, USDC_ABI, provider);
 
 // State
@@ -72,8 +72,8 @@ async function monitorRewardDistributions() {
         console.log(`🔍 Blocks ${lastProcessedBlock} → ${currentBlock}`);
 
         if (currentBlock > lastProcessedBlock) {
-            const events = await itm.queryFilter(
-                itm.filters.Transfer(config.CONTRACT_ADDRESS),
+            const events = await atm.queryFilter(
+                atm.filters.Transfer(config.CONTRACT_ADDRESS),
                 lastProcessedBlock,
                 currentBlock
             );
@@ -104,12 +104,12 @@ async function sendStatsUpdate() {
     try {
         console.log("\n📈 Preparing stats update...");
         const [totalDistributed, contractBalance] = await Promise.all([
-            itm.totalDistributed().then(d => ethers.formatUnits(d, 6)),
+            atm.totalDistributed().then(d => ethers.formatUnits(d, 6)),
             usdc.balanceOf(config.CONTRACT_ADDRESS).then(b => ethers.formatUnits(b, 6))
         ]);
 
         const message =
-            `🔄 *ITM Reward Update*\n\n` +
+            `🔄 *ATM Reward Update*\n\n` +
             `💰 Total Distributed: $${parseFloat(totalDistributed).toFixed(2)} USDC\n` +
             `🏦 Contract Balance: $${parseFloat(contractBalance).toFixed(6)} USDC\n` +
             `⏰ Updated: ${new Date().toLocaleTimeString()}`;
@@ -134,7 +134,7 @@ async function startBot() {
         console.log("✅ Telegram connection working");
 
         // Initial data load
-        lastTotalDistributed = await itm.totalDistributed();
+        lastTotalDistributed = await atm.totalDistributed();
         lastProcessedBlock = block;
         console.log(`💰 Initial total distributed: $${ethers.formatUnits(lastTotalDistributed, 6)} USDC`);
 
