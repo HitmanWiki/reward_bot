@@ -82,10 +82,11 @@ async function monitorRewardDistributions() {
 
             for (const event of events) {
                 const amount = ethers.formatUnits(event.args.value, 6);
-                console.log(`🎁 Reward: $${amount} to ${event.args.to.substring(0, 6)}...`);
+                const displayAmount = parseFloat(amount).toFixed(2);
+                console.log(`🎁 Reward: $${displayAmount} to ${event.args.to.substring(0, 6)}...`);
 
                 const message = `🎉 *New Reward Distributed!*\n\n` +
-                    `💰 Amount: $${amount} USDC\n` +
+                    `💰 Amount: $${displayAmount} USDC\n` +
                     `➡️ To: ${event.args.to}\n` +
                     `⏰ Time: ${now.toLocaleString()}\n` +
                     `[🔗 View TX](${config.EXPLORER_URL}${event.transactionHash})`;
