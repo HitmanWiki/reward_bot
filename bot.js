@@ -12,8 +12,8 @@ const config = {
     USDC_ADDRESS: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     UPDATE_INTERVAL: 900000,  // 5 seconds for testing
     REWARD_CHECK_INTERVAL: 60000,  // 3 seconds for testing
-    REWARD_GIF: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWJvYzV5b2VxY2VzZ2F4a2F5Y2x0bGJ6aHd3eG1rY3R5Z2R2dSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3o7abAHdYvZdBNnGZq/giphy.gif",
-    STATS_GIF: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcWJvYzV5b2VxY2VzZ2F4a2F5Y2x0bGJ6aHd3eG1rY3R5Z2R2dSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/JIX9t2j0ZTN9S/giphy.gif",
+    REWARD_GIF: "https://dingooneth.com/IMG_6496.gif",
+    STATS_GIF: "https://dingooneth.com/IMG_6496.gif",
     EXPLORER_URL: "https://basescan.org/tx/"
 };
 
