@@ -81,15 +81,16 @@ async function monitorRewardDistributions() {
             console.log(`📊 Found ${events.length} reward events`);
 
             for (const event of events) {
-                // Get the raw value from the event
-                const rawValue = event.args.value.toString();
-                console.log('Raw value from event:', rawValue);
+                // Format using ethers.js with 6 decimals for USDC
+                const amount = ethers.formatUnits(event.args.value, 6);
 
-                // Convert to proper USDC amount (6 decimals)
-                const usdcAmount = Number(rawValue) / 1000000;
-                const displayAmount = usdcAmount.toFixed(2);
+                // Additional verification steps
+                console.log('Raw BigNumber value:', event.args.value.toString());
+                console.log('Formatted USDC value:', amount);
 
-                console.log(`Processed amount: $${displayAmount} USDC`);
+                // Format for display (2 decimal places)
+                const displayAmount = parseFloat(amount).toFixed(2);
+                console.log('Display amount:', displayAmount);
 
                 const message = `🎉 *New Reward Distributed!*\n\n` +
                     `💰 Amount: $${displayAmount} USDC\n` +
