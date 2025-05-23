@@ -10,8 +10,8 @@ const config = {
     RPC_URL: process.env.RPC_URL,
     CONTRACT_ADDRESS: "0x88807fDabF60fdDd7bd8fB4987dC5A63cbd31f6a",
     USDC_ADDRESS: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    UPDATE_INTERVAL: 900000,  // 5 seconds for testing
-    REWARD_CHECK_INTERVAL: 60000,  // 3 seconds for testing
+    UPDATE_INTERVAL: 900000,  // 15 minutes
+    REWARD_CHECK_INTERVAL: 60000,  // 1 minute
     REWARD_GIF: "https://dingooneth.com/IMG_6496.gif",
     STATS_GIF: "https://dingooneth.com/IMG_6496.gif",
     EXPLORER_URL: "https://basescan.org/tx/"
@@ -32,11 +32,13 @@ const server = app.listen(process.env.PORT || 3000, () => {
 // Contracts
 const ATM_ABI = [
     "function totalDistributed() view returns (uint256)",
-    "event Transfer(address indexed from, address indexed to, uint256 value)"
+    "event Transfer(address indexed from, address indexed to, uint256 value)",
+    "function getDistributionAmount(address recipient) view returns (uint256)"  // Added new function
 ];
 
 const USDC_ABI = [
-    "function balanceOf(address) view returns (uint256)"
+    "function balanceOf(address) view returns (uint256)",
+    "function decimals() view returns (uint8)"  // Added to verify decimals
 ];
 
 const atm = new ethers.Contract(config.CONTRACT_ADDRESS, ATM_ABI, provider);
@@ -45,6 +47,7 @@ const usdc = new ethers.Contract(config.USDC_ADDRESS, USDC_ABI, provider);
 // State
 let lastTotalDistributed = "0";
 let lastProcessedBlock = 0;
+let usdcDecimals = 6; // Default to 6, will be verified
 
 // ======================
 // CORE FUNCTIONS
@@ -60,6 +63,17 @@ async function sendWithGif(chatId, message, gifUrl) {
         console.log('✅ Telegram message sent!');
     } catch (error) {
         console.error('❌ Telegram send failed:', error.message);
+    }
+}
+
+async function verifyUsdcDecimals() {
+    try {
+        const decimals = await usdc.decimals();
+        console.log(`ℹ️ USDC decimals verified: ${decimals}`);
+        return decimals;
+    } catch (error) {
+        console.error('⚠️ Failed to get USDC decimals, using default 6');
+        return 6;
     }
 }
 
@@ -81,24 +95,40 @@ async function monitorRewardDistributions() {
             console.log(`📊 Found ${events.length} reward events`);
 
             for (const event of events) {
-                // Format using ethers.js with 6 decimals for USDC
-                const amount = ethers.formatUnits(event.args.value, 6);
+                try {
+                    // Method 1: Get precise amount from contract
+                    let amount;
+                    try {
+                        amount = await atm.getDistributionAmount(event.args.to);
+                        console.log('✅ Got precise amount from contract');
+                    } catch {
+                        // Fallback to event value if function not available
+                        amount = event.args.value;
+                        console.log('ℹ️ Using event value as fallback');
+                    }
 
-                // Additional verification steps
-                console.log('Raw BigNumber value:', event.args.value.toString());
-                console.log('Formatted USDC value:', amount);
+                    // Format amount with verified decimals
+                    const formattedAmount = ethers.formatUnits(amount, usdcDecimals);
+                    const displayAmount = parseFloat(formattedAmount).toFixed(2);
 
-                // Format for display (2 decimal places)
-                const displayAmount = parseFloat(amount).toFixed(2);
-                console.log('Display amount:', displayAmount);
+                    // Sanity check
+                    if (displayAmount > 1000000) {
+                        console.error('⚠️ Suspiciously large amount detected, skipping');
+                        continue;
+                    }
 
-                const message = `🎉 *New Reward Distributed!*\n\n` +
-                    `💰 Amount: $${displayAmount} USDC\n` +
-                    `➡️ To: ${event.args.to}\n` +
-                    `⏰ Time: ${now.toLocaleString()}\n` +
-                    `[🔗 View TX](${config.EXPLORER_URL}${event.transactionHash})`;
+                    console.log(`💵 Validated amount: $${displayAmount} USDC`);
 
-                await sendWithGif(config.CHAT_ID, message, config.REWARD_GIF);
+                    const message = `🎉 *New Reward Distributed!*\n\n` +
+                        `💰 Amount: $${displayAmount} USDC\n` +
+                        `➡️ To: ${event.args.to}\n` +
+                        `⏰ Time: ${now.toLocaleString()}\n` +
+                        `[🔗 View TX](${config.EXPLORER_URL}${event.transactionHash})`;
+
+                    await sendWithGif(config.CHAT_ID, message, config.REWARD_GIF);
+                } catch (eventError) {
+                    console.error('⚠️ Error processing event:', eventError);
+                }
             }
 
             lastProcessedBlock = currentBlock;
@@ -107,12 +137,13 @@ async function monitorRewardDistributions() {
         console.error('⚠️ Reward check failed:', error);
     }
 }
+
 async function sendStatsUpdate() {
     try {
         console.log("\n📈 Preparing stats update...");
         const [totalDistributed, contractBalance] = await Promise.all([
-            atm.totalDistributed().then(d => ethers.formatUnits(d, 6)),
-            usdc.balanceOf(config.CONTRACT_ADDRESS).then(b => ethers.formatUnits(b, 6))
+            atm.totalDistributed().then(d => ethers.formatUnits(d, usdcDecimals)),
+            usdc.balanceOf(config.CONTRACT_ADDRESS).then(b => ethers.formatUnits(b, usdcDecimals))
         ]);
 
         const message =
@@ -137,13 +168,16 @@ async function startBot() {
         const block = await provider.getBlockNumber();
         console.log(`✅ Blockchain connected (Block ${block})`);
 
+        // Verify USDC decimals
+        usdcDecimals = await verifyUsdcDecimals();
+
         // await bot.telegram.sendMessage(config.CHAT_ID, "🤖 ATM Rewards Bot is now online!");
         console.log("✅ Telegram connection working");
 
         // Initial data load
         lastTotalDistributed = await atm.totalDistributed();
         lastProcessedBlock = block;
-        console.log(`💰 Initial total distributed: $${ethers.formatUnits(lastTotalDistributed, 6)} USDC`);
+        console.log(`💰 Initial total distributed: $${ethers.formatUnits(lastTotalDistributed, usdcDecimals)} USDC`);
 
         // Start monitoring
         console.log("\n🚀 Starting monitoring...");
