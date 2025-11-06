@@ -2,6 +2,8 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const { ethers } = require('ethers');
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 
 // Configuration
 const config = {
@@ -12,8 +14,8 @@ const config = {
     BASE_ETH_ADDRESS: "0x4200000000000000000000000000000000000006", // WETH on Base
     UPDATE_INTERVAL: 420000,  // 15 minutes (in milliseconds)
     REWARD_CHECK_INTERVAL: 120000,  // 2 minutes (reduced frequency)
-    REWARD_GIF: "https://basedbot.xyz/IMG_0053.MP4",
-    STATS_GIF: "https://basedbot.xyz/IMG_0053.MP4",
+    REWARD_GIF: "./IMG_0053.mp4",  // Local file path
+    STATS_GIF: "./IMG_0053.mp4",    // Local file path
     EXPLORER_URL: "https://basescan.org/tx/",
     MIN_REWARD_AMOUNT: 0.0001  // Minimum 0.0001 ETH to notify
 };
@@ -29,6 +31,23 @@ app.get('/', (req, res) => res.send('Bot is healthy'));
 const server = app.listen(process.env.PORT || 3000, () => {
     console.log(`⚡ Health check running on port ${process.env.PORT || 3000}`);
 });
+
+// Check if local GIF files exist
+function checkLocalFiles() {
+    const filesToCheck = [
+        { path: config.REWARD_GIF, name: 'Reward GIF' },
+        { path: config.STATS_GIF, name: 'Stats GIF' }
+    ];
+
+    filesToCheck.forEach(file => {
+        if (fs.existsSync(file.path)) {
+            console.log(`✅ ${file.name} found: ${file.path}`);
+        } else {
+            console.log(`❌ ${file.name} not found: ${file.path}`);
+            console.log(`💡 Please place ${file.name} in the bot's root directory`);
+        }
+    });
+}
 
 // Contracts
 const BASED_BOT_ABI = [
@@ -57,16 +76,39 @@ let processedTransactions = new Set();
 // CORE FUNCTIONS
 // ======================
 
-async function sendWithGif(chatId, message, gifUrl) {
+async function sendWithGif(chatId, message, gifPath) {
     try {
         console.log(`📤 Sending to Telegram: ${message.substring(0, 30)}...`);
-        await bot.telegram.sendAnimation(chatId, gifUrl, {
-            caption: message,
-            parse_mode: 'Markdown'
-        });
-        console.log('✅ Telegram message sent!');
+        
+        // Check if file exists locally
+        if (fs.existsSync(gifPath)) {
+            // Send local file
+            await bot.telegram.sendAnimation(chatId, 
+                { source: fs.readFileSync(gifPath) }, 
+                {
+                    caption: message,
+                    parse_mode: 'Markdown'
+                }
+            );
+            console.log('✅ Telegram message with local GIF sent!');
+        } else {
+            console.log('⚠️ Local GIF not found, sending text only');
+            await bot.telegram.sendMessage(chatId, message, {
+                parse_mode: 'Markdown'
+            });
+        }
     } catch (error) {
         console.error('❌ Telegram send failed:', error.message);
+        
+        // Fallback to text message
+        try {
+            await bot.telegram.sendMessage(chatId, message, {
+                parse_mode: 'Markdown'
+            });
+            console.log('✅ Fallback text message sent!');
+        } catch (textError) {
+            console.error('💥 Text fallback also failed:', textError.message);
+        }
     }
 }
 
@@ -209,6 +251,10 @@ async function sendStatsUpdate() {
 async function startBot() {
     try {
         console.log("\n🔌 Testing connections...");
+        
+        // Check local files first
+        checkLocalFiles();
+        
         const block = await provider.getBlockNumber();
         console.log(`✅ Blockchain connected (Block ${block})`);
 
