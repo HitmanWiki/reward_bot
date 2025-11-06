@@ -76,6 +76,18 @@ let processedTransactions = new Set();
 // CORE FUNCTIONS
 // ======================
 
+// Function to get UTC time string
+function getUTCTimeString() {
+    const now = new Date();
+    return now.toUTCString();
+}
+
+// Function to get UTC time for logging
+function getUTCTimeForLog() {
+    const now = new Date();
+    return now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+}
+
 async function sendWithGif(chatId, message, gifPath) {
     try {
         console.log(`📤 Sending to Telegram: ${message.substring(0, 30)}...`);
@@ -128,8 +140,8 @@ async function verifyTokenDetails() {
 
 async function monitorRewardDistributions() {
     try {
-        const now = new Date();
-        console.log(`\n[${now.toLocaleTimeString()}] 🔄 Checking rewards...`);
+        const utcTime = getUTCTimeForLog();
+        console.log(`\n[${utcTime}] 🔄 Checking rewards...`);
 
         const currentBlock = await provider.getBlockNumber();
         
@@ -194,7 +206,7 @@ async function monitorRewardDistributions() {
                     const message = `🎉 *New Reward Distributed!*\n\n` +
                         `💰 Amount: ${displayAmount.toFixed(6)} ${tokenSymbol}\n` +
                         `➡️ To: \`${event.args.to}\`\n` +
-                        `⏰ Time: ${now.toLocaleString()}\n` +
+                        `⏰ Time: ${getUTCTimeString()}\n` +
                         `[🔗 View TX](${config.EXPLORER_URL}${event.transactionHash})`;
 
                     await sendWithGif(config.CHAT_ID, message, config.REWARD_GIF);
@@ -237,7 +249,7 @@ async function sendStatsUpdate() {
             `🔄 *BASED_BOT Reward Update*\n\n` +
             `💰 Total Distributed: ${parseFloat(totalDistributed).toFixed(6)} ${tokenSymbol}\n` +
             `🏦 Contract Balance: ${parseFloat(contractBalance).toFixed(6)} ${tokenSymbol}\n` +
-            `⏰ Updated: ${new Date().toLocaleTimeString()}`;
+            `⏰ Updated: ${getUTCTimeString()}`;
 
         await sendWithGif(config.CHAT_ID, message, config.STATS_GIF);
     } catch (error) {
