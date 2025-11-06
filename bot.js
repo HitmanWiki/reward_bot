@@ -10,10 +10,10 @@ const config = {
     RPC_URL: process.env.RPC_URL,
     CONTRACT_ADDRESS: "0x88807fDabF60fdDd7bd8fB4987dC5A63cbd31f6a",
     BASE_ETH_ADDRESS: "0x4200000000000000000000000000000000000006", // WETH on Base
-    UPDATE_INTERVAL: 500,  // 15 minutes (in milliseconds)
+    UPDATE_INTERVAL: 420000,  // 15 minutes (in milliseconds)
     REWARD_CHECK_INTERVAL: 120000,  // 2 minutes (reduced frequency)
-    REWARD_GIF: "https://dingooneth.com/IMG_6496.gif",
-    STATS_GIF: "https://dingooneth.com/IMG_6496.gif",
+    REWARD_GIF: "https://basedbot.xyz/IMG_0053.MP4",
+    STATS_GIF: "https://basedbot.xyz/IMG_0053.MP4",
     EXPLORER_URL: "https://basescan.org/tx/",
     MIN_REWARD_AMOUNT: 0.0001  // Minimum 0.0001 ETH to notify
 };
