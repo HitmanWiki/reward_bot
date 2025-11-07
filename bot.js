@@ -10,7 +10,7 @@ const config = {
     TELEGRAM_TOKEN: process.env.TELEGRAM_TOKEN,
     CHAT_ID: process.env.CHAT_ID,
     RPC_URL: process.env.RPC_URL,
-    CONTRACT_ADDRESS: "0x88807fDabF60fdDd7bd8fB4987dC5A63cbd31f6a",
+    CONTRACT_ADDRESS: "0xeE4A1E42a11E3C0dD48D438110fd66590b269ec2",
     BASE_ETH_ADDRESS: "0x4200000000000000000000000000000000000006", // WETH on Base
     UPDATE_INTERVAL: 420000,  // 15 minutes (in milliseconds)
     REWARD_CHECK_INTERVAL: 120000,  // 2 minutes (reduced frequency)
