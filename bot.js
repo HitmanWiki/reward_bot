@@ -10,18 +10,18 @@ const config = {
     TELEGRAM_TOKEN: process.env.TELEGRAM_TOKEN,
     CHAT_ID: process.env.CHAT_ID,
     RPC_URL: process.env.RPC_URL,
-    CONTRACT_ADDRESS: "0xeE4A1E42a11E3C0dD48D438110fd66590b269ec2",
-    BASE_ETH_ADDRESS: "0x4200000000000000000000000000000000000006", // WETH on Base
-    UPDATE_INTERVAL: 420000,  // 15 minutes (in milliseconds)
-    REWARD_CHECK_INTERVAL: 120000,  // 2 minutes (reduced frequency)
-    REWARD_GIF: "./IMG_0053.mp4",  // Local file path
-    STATS_GIF: "./IMG_0053.mp4",    // Local file path
+    CONTRACT_ADDRESS: "0xB8591997D969FDBf28E65E96f3DA0E8c5f581ec1",
+    REWARD_TOKEN_ADDRESS: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
+    UPDATE_INTERVAL: 420000,  // 7 minutes (matches contract REWARD_INTERVAL)
+    REWARD_CHECK_INTERVAL: 120000,  // 2 minutes
+    REWARD_GIF: "./IMG_0053.mp4",
+    STATS_GIF: "./IMG_0053.mp4",
     EXPLORER_URL: "https://basescan.org/tx/",
-    MIN_REWARD_AMOUNT: 0.0001  // Minimum 0.0001 ETH to notify
+    MIN_REWARD_AMOUNT: 0.000001  // Minimum 0.01 USDC to notify
 };
 
 // Initialize
-console.log("🟢 Initializing BASED_BOT Rewards Bot...");
+console.log("🟢 Initializing BASED_BOT USDC Rewards Bot...");
 const bot = new Telegraf(config.TELEGRAM_TOKEN);
 const provider = new ethers.JsonRpcProvider(config.RPC_URL);
 
@@ -49,28 +49,34 @@ function checkLocalFiles() {
     });
 }
 
-// Contracts
+// Contracts - Updated ABI for USDC rewards
 const BASED_BOT_ABI = [
-    "function totalDistributed() view returns (uint256)",
-    "event Transfer(address indexed from, address indexed to, uint256 value)",
-    "function getDistributionAmount(address recipient) view returns (uint256)"
+    "function totalRewardsDistributed() view returns (uint256)",
+    "function accumulatedRewardPool() view returns (uint256)",
+    "function getRewardInfo() view returns (uint256, uint256, uint256, uint256, uint256)",
+    "function getHolderCount() view returns (uint256)",
+    "event RewardDistributed(address indexed user, uint256 amount)",
+    "event AutoDistribution(uint256 totalDistributed, uint256 holderCount)",
+    "event RewardsAccumulated(uint256 usdcAmount)"
 ];
 
-const WETH_ABI = [
+const USDC_ABI = [
     "function balanceOf(address) view returns (uint256)",
     "function decimals() view returns (uint8)",
-    "function symbol() view returns (string)"
+    "function symbol() view returns (string)",
+    "function transfer(address, uint256) returns (bool)"
 ];
 
 const BASED_BOT = new ethers.Contract(config.CONTRACT_ADDRESS, BASED_BOT_ABI, provider);
-const baseEth = new ethers.Contract(config.BASE_ETH_ADDRESS, WETH_ABI, provider);
+const USDC_TOKEN = new ethers.Contract(config.REWARD_TOKEN_ADDRESS, USDC_ABI, provider);
 
 // State
-let lastTotalDistributed = "0";
+let lastTotalRewardsDistributed = "0";
 let lastProcessedBlock = 0;
-let ethDecimals = 18; // ETH/WETH always has 18 decimals
-let tokenSymbol = "ETH";
+let usdcDecimals = 6; // USDC has 6 decimals
+let tokenSymbol = "USDC";
 let processedTransactions = new Set();
+let processedRewardEvents = new Set();
 
 // ======================
 // CORE FUNCTIONS
@@ -92,9 +98,7 @@ async function sendWithGif(chatId, message, gifPath) {
     try {
         console.log(`📤 Sending to Telegram: ${message.substring(0, 30)}...`);
         
-        // Check if file exists locally
         if (fs.existsSync(gifPath)) {
-            // Send local file
             await bot.telegram.sendAnimation(chatId, 
                 { source: fs.readFileSync(gifPath) }, 
                 {
@@ -127,136 +131,254 @@ async function sendWithGif(chatId, message, gifPath) {
 async function verifyTokenDetails() {
     try {
         const [symbol, decimals] = await Promise.all([
-            baseEth.symbol(),
-            baseEth.decimals()
+            USDC_TOKEN.symbol(),
+            USDC_TOKEN.decimals()
         ]);
-        console.log(`ℹ️ Token verified: ${symbol} with ${decimals} decimals`);
+        console.log(`ℹ️ Reward token verified: ${symbol} with ${decimals} decimals`);
         return { symbol, decimals };
     } catch (error) {
-        console.error('⚠️ Failed to get token details, using defaults');
-        return { symbol: "ETH", decimals: 18 };
+        console.error('⚠️ Failed to get USDC details, using defaults');
+        return { symbol: "USDC", decimals: 6 };
     }
 }
 
 async function monitorRewardDistributions() {
     try {
         const utcTime = getUTCTimeForLog();
-        console.log(`\n[${utcTime}] 🔄 Checking rewards...`);
+        console.log(`\n[${utcTime}] 🔄 Checking USDC rewards...`);
 
         const currentBlock = await provider.getBlockNumber();
         
         // Only check recent blocks to avoid too many events
-        const fromBlock = Math.max(lastProcessedBlock, currentBlock - 100);
+        const fromBlock = Math.max(lastProcessedBlock, currentBlock - 1000);
         
-        console.log(`🔍 Blocks ${fromBlock} → ${currentBlock}`);
+        console.log(`🔍 Scanning blocks ${fromBlock} → ${currentBlock}`);
 
         if (currentBlock > fromBlock) {
-            const events = await BASED_BOT.queryFilter(
-                BASED_BOT.filters.Transfer(config.CONTRACT_ADDRESS),
+            // Get ALL events from the contract to see what's actually being emitted
+            const allEvents = await BASED_BOT.queryFilter("*", fromBlock, currentBlock);
+            console.log(`📊 Found ${allEvents.length} total events from contract`);
+
+            // Listen for RewardDistributed events
+            const rewardEvents = await BASED_BOT.queryFilter(
+                BASED_BOT.filters.RewardDistributed(),
                 fromBlock,
                 currentBlock
             );
 
-            console.log(`📊 Found ${events.length} transfer events`);
+            console.log(`🎯 Found ${rewardEvents.length} RewardDistributed events`);
+
+            // Also check for AutoDistribution events
+            const autoDistributionEvents = await BASED_BOT.queryFilter(
+                BASED_BOT.filters.AutoDistribution(),
+                fromBlock,
+                currentBlock
+            );
+
+            console.log(`🔄 Found ${autoDistributionEvents.length} AutoDistribution events`);
 
             let rewardCount = 0;
+            let totalDistributedThisCycle = 0;
             
-            for (const event of events) {
+            // Process RewardDistributed events
+            for (const event of rewardEvents) {
                 try {
+                    const eventKey = `${event.transactionHash}_${event.logIndex}`;
+                    
                     // Skip if already processed
-                    if (processedTransactions.has(event.transactionHash)) {
-                        console.log(`⏩ Skipping already processed TX: ${event.transactionHash}`);
+                    if (processedRewardEvents.has(eventKey)) {
+                        console.log(`⏩ Skipping already processed reward event: ${eventKey}`);
                         continue;
                     }
 
-                    // Skip zero-value transfers
-                    if (event.args.value === 0n) {
-                        console.log(`⏩ Skipping zero value transfer`);
-                        continue;
-                    }
-
-                    // Get amount with fallback
-                    let amount;
-                    try {
-                        amount = await BASED_BOT.getDistributionAmount(event.args.to);
-                        console.log('✅ Got precise amount from contract');
-                    } catch {
-                        amount = event.args.value;
-                        console.log('ℹ️ Using event value as fallback');
-                    }
+                    const user = event.args.user;
+                    const amount = event.args.amount;
 
                     // Format and validate amount
-                    const formattedAmount = ethers.formatUnits(amount, ethDecimals);
+                    const formattedAmount = ethers.formatUnits(amount, usdcDecimals);
                     const displayAmount = parseFloat(formattedAmount);
 
-                    // Skip if below minimum threshold
+                    console.log(`🔍 Processing reward event: ${displayAmount} USDC to ${user}`);
+
+                    // Skip if below minimum threshold (now very low)
                     if (displayAmount < config.MIN_REWARD_AMOUNT) {
-                        console.log(`⏩ Skipping small amount: ${displayAmount} ${tokenSymbol}`);
+                        console.log(`⏩ Skipping very small reward: ${displayAmount.toFixed(6)} ${tokenSymbol}`);
                         continue;
                     }
 
-                    // Sanity check for suspiciously large amounts
-                    if (displayAmount > 1000) { // More than 1000 ETH is suspicious
-                        console.error('⚠️ Suspiciously large amount detected, skipping');
-                        continue;
-                    }
+                    console.log(`💵 ✅ VALID REWARD DETECTED: ${displayAmount.toFixed(6)} ${tokenSymbol} to ${user}`);
 
-                    console.log(`💵 Valid reward: ${displayAmount.toFixed(6)} ${tokenSymbol} to ${event.args.to.substring(0, 8)}...`);
-
-                    const message = `🎉 *New Reward Distributed!*\n\n` +
+                    const message = `🎉 *New USDC Reward Distributed!*\n\n` +
                         `💰 Amount: ${displayAmount.toFixed(6)} ${tokenSymbol}\n` +
-                        `➡️ To: \`${event.args.to}\`\n` +
+                        `👤 To: \`${user}\`\n` +
                         `⏰ Time: ${getUTCTimeString()}\n` +
                         `[🔗 View TX](${config.EXPLORER_URL}${event.transactionHash})`;
 
                     await sendWithGif(config.CHAT_ID, message, config.REWARD_GIF);
                     
                     // Mark as processed
-                    processedTransactions.add(event.transactionHash);
+                    processedRewardEvents.add(eventKey);
                     rewardCount++;
+                    totalDistributedThisCycle += displayAmount;
+
+                    console.log(`✅ Successfully notified reward to ${user}`);
 
                     // Small delay between notifications to avoid rate limiting
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
                 } catch (eventError) {
-                    console.error('⚠️ Error processing event:', eventError);
+                    console.error('⚠️ Error processing reward event:', eventError);
                 }
             }
 
-            console.log(`✅ Processed ${rewardCount} new rewards`);
+            // Process AutoDistribution events - notify even for small amounts since it's a summary
+            for (const event of autoDistributionEvents) {
+                try {
+                    const eventKey = `auto_${event.transactionHash}_${event.logIndex}`;
+                    
+                    if (processedRewardEvents.has(eventKey)) {
+                        continue;
+                    }
+
+                    const totalDistributed = event.args.totalDistributed;
+                    const holderCount = event.args.holderCount;
+
+                    const formattedTotal = ethers.formatUnits(totalDistributed, usdcDecimals);
+                    const displayTotal = parseFloat(formattedTotal);
+
+                    console.log(`🔍 Processing auto distribution: ${displayTotal} USDC to ${holderCount} holders`);
+
+                    // Always notify auto distribution events as they're summaries
+                    const message = `🚀 *Auto Distribution Completed!*\n\n` +
+                        `💰 Total Distributed: ${displayTotal.toFixed(6)} ${tokenSymbol}\n` +
+                        `👥 Holders Rewarded: ${holderCount}\n` +
+                        `⏰ Time: ${getUTCTimeString()}\n` +
+                        `[🔗 View TX](${config.EXPLORER_URL}${event.transactionHash})`;
+
+                    await sendWithGif(config.CHAT_ID, message, config.REWARD_GIF);
+                    processedRewardEvents.add(eventKey);
+                    rewardCount++;
+                    console.log(`✅ Notified auto distribution to ${holderCount} holders`);
+
+                } catch (autoError) {
+                    console.error('⚠️ Error processing auto distribution event:', autoError);
+                }
+            }
+
+            console.log(`✅ Processed ${rewardCount} new reward events, total: ${totalDistributedThisCycle.toFixed(6)} USDC`);
             lastProcessedBlock = currentBlock;
 
-            // Clean up old transactions from memory (keep last 1000)
-            if (processedTransactions.size > 1000) {
-                const array = Array.from(processedTransactions);
-                processedTransactions = new Set(array.slice(-500));
+            // Clean up old events from memory (keep last 1000)
+            if (processedRewardEvents.size > 1000) {
+                const array = Array.from(processedRewardEvents);
+                processedRewardEvents = new Set(array.slice(-500));
+            }
+
+            // Send summary if we processed multiple individual rewards
+            if (rewardCount > 1 && totalDistributedThisCycle > 0) {
+                const summaryMessage = `📊 *Distribution Summary*\n\n` +
+                    `💰 Total Distributed: ${totalDistributedThisCycle.toFixed(6)} ${tokenSymbol}\n` +
+                    `👥 Rewards Sent: ${rewardCount}\n` +
+                    `⏰ Period: ${getUTCTimeString()}`;
+                
+                await sendWithGif(config.CHAT_ID, summaryMessage, config.REWARD_GIF);
             }
         }
     } catch (error) {
         console.error('⚠️ Reward check failed:', error);
     }
 }
-
 async function sendStatsUpdate() {
     try {
-        console.log("\n📈 Preparing stats update...");
-        const [totalDistributed, contractBalance] = await Promise.all([
-            BASED_BOT.totalDistributed().then(d => ethers.formatUnits(d, ethDecimals)),
-            baseEth.balanceOf(config.CONTRACT_ADDRESS).then(b => ethers.formatUnits(b, ethDecimals))
+        console.log("\n📈 Preparing USDC stats update...");
+        
+        // Get all the necessary data
+        const [
+            totalRewardsDistributed,
+            accumulatedRewardPool,
+            contractUSDCBalance,
+            holderCount
+        ] = await Promise.all([
+            BASED_BOT.totalRewardsDistributed(),
+            BASED_BOT.accumulatedRewardPool(),
+            USDC_TOKEN.balanceOf(config.CONTRACT_ADDRESS),
+            BASED_BOT.getHolderCount()
         ]);
 
+        console.log('📊 Raw contract data:', {
+            totalRewardsDistributed: totalRewardsDistributed.toString(),
+            accumulatedRewardPool: accumulatedRewardPool.toString(),
+            contractUSDCBalance: contractUSDCBalance.toString(),
+            holderCount: holderCount.toString()
+        });
+
+        // Convert all values properly
+        const totalDistributed = parseFloat(ethers.formatUnits(totalRewardsDistributed, usdcDecimals));
+        const accumulatedPool = parseFloat(ethers.formatUnits(accumulatedRewardPool, usdcDecimals));
+        const contractBalance = parseFloat(ethers.formatUnits(contractUSDCBalance, usdcDecimals));
+        const holders = Number(holderCount);
+
+        console.log('📊 Formatted data:', {
+            totalDistributed,
+            accumulatedPool,
+            contractBalance,
+            holders
+        });
+
+        // Format numbers properly - use more decimals for small amounts
+        function formatUSDC(amount) {
+            if (amount === 0) return "0.00";
+            if (amount < 0.01) return amount.toFixed(6); // Show more decimals for small amounts
+            if (amount < 1) return amount.toFixed(4);    // 4 decimals for amounts under 1
+            return amount.toFixed(2);                    // 2 decimals for larger amounts
+        }
+
         const message =
-            `🔄 *BASED_BOT Reward Update*\n\n` +
-            `💰 Total Distributed: ${parseFloat(totalDistributed).toFixed(6)} ${tokenSymbol}\n` +
-            `🏦 Contract Balance: ${parseFloat(contractBalance).toFixed(6)} ${tokenSymbol}\n` +
+            `🔄 *BASED_BOT USDC Reward Update*\n\n` +
+            `💰 Total Distributed: ${formatUSDC(totalDistributed)} ${tokenSymbol}\n` +
+            `🏦 Contract Balance: ${formatUSDC(contractBalance)} ${tokenSymbol}\n` +
+            `📥 Ready for Distribution: ${formatUSDC(accumulatedPool)} ${tokenSymbol}\n` +
+            `👥 Total Holders: ${holders}\n` +
             `⏰ Updated: ${getUTCTimeString()}`;
 
         await sendWithGif(config.CHAT_ID, message, config.STATS_GIF);
+        console.log('✅ Stats update sent successfully!');
+        
     } catch (error) {
         console.error('❌ Stats update failed:', error);
+        console.error('Error details:', error.message);
+        
+        // Enhanced fallback with simpler stats
+        try {
+            const [totalRewards, contractBalance] = await Promise.all([
+                BASED_BOT.totalRewardsDistributed(),
+                USDC_TOKEN.balanceOf(config.CONTRACT_ADDRESS)
+            ]);
+
+            const totalFormatted = parseFloat(ethers.formatUnits(totalRewards, usdcDecimals));
+            const balanceFormatted = parseFloat(ethers.formatUnits(contractBalance, usdcDecimals));
+
+            function formatFallback(amount) {
+                if (amount === 0) return "0.00";
+                if (amount < 0.01) return amount.toFixed(6);
+                if (amount < 1) return amount.toFixed(4);
+                return amount.toFixed(2);
+            }
+
+            const fallbackMessage =
+                `🔄 *BASED_BOT USDC Reward Update*\n\n` +
+                `💰 Total Distributed: ${formatFallback(totalFormatted)} ${tokenSymbol}\n` +
+                `🏦 Contract Balance: ${formatFallback(balanceFormatted)} ${tokenSymbol}\n` +
+                `⏰ Updated: ${getUTCTimeString()}\n\n` +
+                `ℹ️ Some stats temporarily unavailable`;
+
+            await sendWithGif(config.CHAT_ID, fallbackMessage, config.STATS_GIF);
+            console.log('✅ Fallback stats update sent!');
+        } catch (fallbackError) {
+            console.error('💥 Fallback also failed:', fallbackError.message);
+        }
     }
 }
-
 // ======================
 // BOT CONTROL
 // ======================
@@ -273,17 +395,18 @@ async function startBot() {
         // Verify token details
         const tokenDetails = await verifyTokenDetails();
         tokenSymbol = tokenDetails.symbol;
-        ethDecimals = tokenDetails.decimals;
+        usdcDecimals = tokenDetails.decimals;
 
         console.log("✅ Telegram connection working");
 
         // Initial data load
-        lastTotalDistributed = await BASED_BOT.totalDistributed();
+        lastTotalRewardsDistributed = await BASED_BOT.totalRewardsDistributed();
         lastProcessedBlock = block;
-        console.log(`💰 Initial total distributed: ${ethers.formatUnits(lastTotalDistributed, ethDecimals)} ${tokenSymbol}`);
+        const initialTotal = ethers.formatUnits(lastTotalRewardsDistributed, usdcDecimals);
+        console.log(`💰 Initial total rewards distributed: ${initialTotal} ${tokenSymbol}`);
 
         // Start monitoring with reduced frequency
-        console.log("\n🚀 Starting monitoring...");
+        console.log("\n🚀 Starting USDC reward monitoring...");
         setInterval(monitorRewardDistributions, config.REWARD_CHECK_INTERVAL);
         setInterval(sendStatsUpdate, config.UPDATE_INTERVAL);
 
