@@ -10,13 +10,13 @@ const config = {
     TELEGRAM_TOKEN: process.env.TELEGRAM_TOKEN,
     CHAT_ID: process.env.CHAT_ID,
     RPC_URL: process.env.RPC_URL,
-    CONTRACT_ADDRESS: "0x180d35B83D0d1e950b4a66F49C7D90be6CF51366",
-    REWARD_TOKEN_ADDRESS: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
+    CONTRACT_ADDRESS: "0x2cFa3EAb79E5CfE34EAabfb6aCaAC0Da0565Aa77",
+    REWARD_TOKEN_ADDRESS: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603", // USDC on MONAD
     UPDATE_INTERVAL: 420000,  // 7 minutes (matches contract REWARD_INTERVAL)
-    REWARD_CHECK_INTERVAL: 120000,  // 2 minutes
-    REWARD_GIF: "./IMG_0053.mp4",
-    STATS_GIF: "./IMG_0053.mp4",
-    EXPLORER_URL: "https://basescan.org/tx/",
+    REWARD_CHECK_INTERVAL: 420000,  // 7 minutes
+    REWARD_GIF: "./IMG_0363.MP4",
+    STATS_GIF: "./IMG_0363.MP4",
+    EXPLORER_URL: "https://monadscan.com/",
     MIN_REWARD_AMOUNT: 0.000001  // Minimum 0.01 USDC to notify
 };
 
