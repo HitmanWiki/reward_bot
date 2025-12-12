@@ -334,7 +334,7 @@ async function sendStatsUpdate() {
         }
 
         const message =
-            `🔄 *BASED_BOT USDC Reward Update*\n\n` +
+            `🔄 *TRASHY_BOT USDC Reward Update*\n\n` +
             `💰 Total Distributed: ${formatUSDC(totalDistributed)} ${tokenSymbol}\n` +
             `🏦 Contract Balance: ${formatUSDC(contractBalance)} ${tokenSymbol}\n` +
             `📥 Ready for Distribution: ${formatUSDC(accumulatedPool)} ${tokenSymbol}\n` +
